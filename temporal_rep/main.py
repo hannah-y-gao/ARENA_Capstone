@@ -19,7 +19,7 @@ import gdown
 from transformer_lens.hook_points import HookPoint
 from transformer_lens import utils, HookedTransformer, HookedTransformerConfig, FactoredMatrix, ActivationCache
 import circuitsvis as cv
-
+from plotly.subplots import make_subplots
 
 # %%
 # Load GPT-2 Small
@@ -43,10 +43,10 @@ prompts = []
 answers = []
 for i in range(len(days)):
     prompts.append(f"If today is {days[i]}, tomorrow is")
-    answers.append(days[(i+1)%len(days)])
+    answers.append(" " + days[(i+1)%len(days)])
 
 prompt_tokens = model.to_tokens(prompts, prepend_bos=True)
-answer_tokens = model.to_tokens(answers, prepend_bos=False)
+answer_tokens = model.to_tokens(answers, prepend_bos=False).reshape((len(days)))
 
 seq_length = prompt_tokens.shape[-1]
 batch_size = prompt_tokens.shape[0]
@@ -63,15 +63,15 @@ print(model.hook_dict)
 
 # %% 
 # Find baseline correct_probs for no ablation
-no_ablation_logits = logits
-no_ablation_probs = (t.softmax(logits, dim=-1))[:, -1, :]
-no_ablation_correct_probs = no_ablation_probs[t.arange(len(days)), answer_tokens]
+no_ablation_logits = logits # shape: (batch, seq_length, vocab)
+no_ablation_probs = (t.softmax(logits, dim=-1))[:, -1, :] # shape: (batch, vocab)
 
+no_ablation_correct_probs = no_ablation_probs[t.arange(len(days)), answer_tokens] # shape: (batch)
 # %%
 # Ablate every head according to an ablation method
 def ablate_each_head(method):
     def wrapper():
-        all_logits = t.zeros((model.cfg.n_layers, model.cfg.n_heads, batch_size, seq_length, model.cfg.d_vocab))
+        all_logits = t.zeros((model.cfg.n_layers, model.cfg.n_heads, batch_size, seq_length, model.cfg.d_vocab)).to(device)
         for layer in range(model.cfg.n_layers):
             for head in range(model.cfg.n_heads):
                 temp_hook_fn = functools.partial(method, head_idx=head)
@@ -90,11 +90,36 @@ def zero_ablation_hook(
     head_idx: int
 ) -> Float[Tensor, "batch heads seqQ seqK"]:
     head_pattern = attn_pattern[:, head_idx]
-    attn_pattern[:, head_idx] = t.zeros_like(head_pattern)
+    attn_pattern[:, head_idx] = t.zeros_like(head_pattern).to(device)
     return attn_pattern
 
 # %%
+# Find correct probs for zero ablation method
 zero_ablation_logits = zero_ablation_hook() # shape: (layers, heads, batch, seq_len, vocab)
-zero_ablation_probs = (t.softmax(zero_ablation_logits, dim=-1))[..., -1, :] # shape: (layers, heads, batch, vocab)
-zero_ablation_correct_probs = zero_ablation_probs[t.arange(len(days)), answer_tokens]
+zero_ablation_probs = t.softmax(zero_ablation_logits[..., -1, :], dim=-1) # shape: (layers, heads, batch, vocab)
+zero_ablation_correct_probs = zero_ablation_probs[..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
+
+# Find average (across the batches) correct probability difference, for each (layer, head) activation
+zero_ablation_prob_diff = t.mean(zero_ablation_correct_probs - no_ablation_correct_probs, dim=-1) # shape: (layers, heads)
+
+# %%
+curr_fig = make_subplots(rows=1, cols=3, subplot_titles=["Zero ablation", "Random ablation", "Mean ablation"], horizontal_spacing=0.05,
+                         x_title='Layer',
+                          y_title='Head')
+curr_fig.update_layout(title_text="Change in correct probs", height=300, width=200*3)
+
+curr_fig.update_layout(coloraxis_autocolorscale=False, coloraxis_colorscale="plasma_r")
+
+zero_fig = px.imshow(zero_ablation_prob_diff.T.cpu())
+
+#random_fig = px.imshow(random_avg_probs.T)
+
+#mean_fig = px.imshow(mean_avg_probs.T)
+
+curr_fig.append_trace(zero_fig.data[0], row=1, col=1)
+#curr_fig.append_trace(random_fig.data[0], row=1, col=2)
+#curr_fig.append_trace(mean_fig.data[0], row=1, col=3)
+
+curr_fig.show()
+
 # %%
