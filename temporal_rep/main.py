@@ -86,7 +86,7 @@ no_ablation_correct_probs = no_ablation_probs[t.arange(len(days)), answer_tokens
 no_ablation_correct_logits = no_ablation_logits[:, -1, :][t.arange(len(days)), answer_tokens] # shape: (batch)
 # %%
 # Ablate every head according to an ablation method
-def ablate_heads(toks):
+def ablate_heads(toks, name="pattern"):
     def ablate_each_head(method):
         def wrapper():
             batch_size = len(toks)
@@ -94,9 +94,7 @@ def ablate_heads(toks):
             for layer in range(model.cfg.n_layers):
                 for head in range(model.cfg.n_heads):
                     temp_hook_fn = functools.partial(method, layer_idx=layer, head_idx=head)
-                    model.reset_hooks()
-                    ablated_logits = model.run_with_hooks(toks, fwd_hooks = [(utils.get_act_name('pattern', layer), temp_hook_fn)], prepend_bos=True,)
-                    #print(f"{ablated_logits.shape=}")
+                    ablated_logits = model.run_with_hooks(toks, fwd_hooks = [(utils.get_act_name(name, layer), temp_hook_fn)], prepend_bos=True,)
                     all_logits[layer, head] = ablated_logits
             return all_logits
         return wrapper
@@ -167,7 +165,7 @@ def mean_dataset_hook(
     hook: HookPoint,
     layer_idx: int,
     head_idx: int
-) -> Float[Tensor, "batch heads seqQ seqK"]:
+):
     head_pattern = attn_pattern[:, head_idx]
     mean_storage[layer_idx, head_idx] = t.mean(head_pattern, dim=0) #average across dataset (shape: (seqQ, seqK))
 
@@ -258,4 +256,28 @@ logit_fig.append_trace(random_logit_fig.data[0], row=1, col=2)
 logit_fig.append_trace(mean_logit_fig.data[0], row=1, col=3)
 
 logit_fig.show()
+
+# %%
+# Select top k next tokens (by logit) for each attention head
+top_k = 3 
+logits_all_heads = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k))
+
+# Apply logit lens to a head
+@ablate_heads(prompt_tokens, name="result")
+def logit_lens_hook(
+    activation_value: Float[Tensor, "batch position heads d_embed"],
+    hook: HookPoint,
+    layer_idx: int,
+    head_idx: int
+):
+    # unembed = nn.Sequential(
+    #     model.ln_final,
+    #     model.unembed,
+    # )
+    #unembedded_output = unembed(activation_value) #unembed the result from this attention head
+    print("hello")
+
+logit_lens_hook()
+# %%
+print(model)
 # %%
