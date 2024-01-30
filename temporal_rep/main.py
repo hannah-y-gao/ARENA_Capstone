@@ -20,7 +20,7 @@ from transformer_lens.hook_points import HookPoint
 from transformer_lens import utils, HookedTransformer, HookedTransformerConfig, FactoredMatrix, ActivationCache
 import circuitsvis as cv
 from plotly.subplots import make_subplots
-
+import random
 # %%
 # Load GPT-2 Small
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
@@ -56,13 +56,15 @@ print(answer_tokens)
 
 #%% 
 # Generate random prompts
+seed = 123
 def random_replace(num_prompts: int, indices: List[int]):
+    random.seed(seed)
     random_prompts = t.zeros((num_prompts, seq_length), dtype=t.int)
     for prompt in range(num_prompts):
         random_prompt_tokens = (prompt_tokens[0]).clone().to(device)
         for idx in indices:
             while True:
-                rand_tok = t.randint(0, model.cfg.d_vocab, size=(1,))
+                rand_tok = random.randrange(model.cfg.d_vocab)
                 if model.to_string(rand_tok)[0] == " ":
                     random_prompt_tokens[idx] = rand_tok
                     break
@@ -80,18 +82,20 @@ print(model.hook_dict)
 # Find baseline correct_probs for no ablation
 no_ablation_logits = logits # shape: (batch, seq_length, vocab)
 no_ablation_probs = (t.softmax(logits, dim=-1))[:, -1, :] # shape: (batch, vocab)
-
 no_ablation_correct_probs = no_ablation_probs[t.arange(len(days)), answer_tokens] # shape: (batch)
+no_ablation_correct_logits = no_ablation_logits[:, -1, :][t.arange(len(days)), answer_tokens] # shape: (batch)
 # %%
 # Ablate every head according to an ablation method
-def ablate_heads(prompt_tokens):
+def ablate_heads(toks):
     def ablate_each_head(method):
         def wrapper():
+            batch_size = len(toks)
             all_logits = t.zeros((model.cfg.n_layers, model.cfg.n_heads, batch_size, seq_length, model.cfg.d_vocab)).to(device)
             for layer in range(model.cfg.n_layers):
                 for head in range(model.cfg.n_heads):
-                    temp_hook_fn = functools.partial(method, head_idx=head)
-                    ablated_logits = model.run_with_hooks(prompt_tokens, fwd_hooks = [(utils.get_act_name('pattern', layer), temp_hook_fn)], prepend_bos=True,)
+                    temp_hook_fn = functools.partial(method, layer_idx=layer, head_idx=head)
+                    model.reset_hooks()
+                    ablated_logits = model.run_with_hooks(toks, fwd_hooks = [(utils.get_act_name('pattern', layer), temp_hook_fn)], prepend_bos=True,)
                     #print(f"{ablated_logits.shape=}")
                     all_logits[layer, head] = ablated_logits
             return all_logits
@@ -99,33 +103,85 @@ def ablate_heads(prompt_tokens):
     return ablate_each_head
 
 # %%
-# Hook functions
+# Zero ablation setup
 
-# Zero ablation
 @ablate_heads(prompt_tokens)
 def zero_ablation_hook(
     attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
     hook: HookPoint,
+    layer_idx: int,
     head_idx: int
 ) -> Float[Tensor, "batch heads seqQ seqK"]:
     head_pattern = attn_pattern[:, head_idx]
-    attn_pattern[:, head_idx] = t.zeros_like(head_pattern).to(device)
+    attn_pattern[:, head_idx] = t.zeros_like(head_pattern).to(device) #replace attn pattern with zeros
     return attn_pattern
 
-# Random ablation
-# Store average of each head
+# %% 
+# Random ablation setup
+
+# Generate random dataset
 D = 256
 random_prompt_tokens = random_replace(D, [2, 4, 6])
 print(model.to_string(random_prompt_tokens))
-# Find the average of each head
-@ablate_heads(prompt_tokens)
-def random_ablation_hook(
+print(random_prompt_tokens.shape)
+
+# Find the average of each head and store
+random_storage = t.zeros((model.cfg.n_layers, model.cfg.n_heads, seq_length, seq_length))
+@ablate_heads(random_prompt_tokens)
+def random_dataset_hook(
     attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
     hook: HookPoint,
+    layer_idx: int,
     head_idx: int
 ) -> Float[Tensor, "batch heads seqQ seqK"]:
     head_pattern = attn_pattern[:, head_idx]
-    attn_pattern[:, head_idx] = t.mean(head_pattern, dim=0).unsqueeze(0) #average across dataset
+    random_storage[layer_idx, head_idx] = t.mean(head_pattern, dim=0) #average across dataset (shape: (seqQ, seqK))
+
+random_dataset_hook()
+
+# Ablate each head with the random dataset attention heads
+@ablate_heads(prompts)
+def random_ablation_hook(
+    attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
+    hook: HookPoint,
+    layer_idx: int,
+    head_idx: int
+) -> Float[Tensor, "batch heads seqQ seqK"]:
+    attn_pattern[:, head_idx, ...] = random_storage[layer_idx, head_idx].unsqueeze(0)
+    return attn_pattern
+
+# %%
+# Mean ablation setup
+
+# Generate random dataset
+D = 256
+mean_prompt_tokens = random_replace(D, [4,])
+print(model.to_string(mean_prompt_tokens))
+print(mean_prompt_tokens.shape)
+
+# Find the average of each head and store
+mean_storage = t.zeros((model.cfg.n_layers, model.cfg.n_heads, seq_length, seq_length))
+@ablate_heads(mean_prompt_tokens)
+def mean_dataset_hook(
+    attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
+    hook: HookPoint,
+    layer_idx: int,
+    head_idx: int
+) -> Float[Tensor, "batch heads seqQ seqK"]:
+    head_pattern = attn_pattern[:, head_idx]
+    mean_storage[layer_idx, head_idx] = t.mean(head_pattern, dim=0) #average across dataset (shape: (seqQ, seqK))
+
+mean_dataset_hook()
+
+# Ablate each head with the random dataset attention heads
+@ablate_heads(prompts)
+def mean_ablation_hook(
+    attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
+    hook: HookPoint,
+    layer_idx: int,
+    head_idx: int
+) -> Float[Tensor, "batch heads seqQ seqK"]:
+    attn_pattern[:, head_idx, ...] = mean_storage[layer_idx, head_idx].unsqueeze(0)
     return attn_pattern
 
 # %%
@@ -133,32 +189,73 @@ def random_ablation_hook(
 zero_ablation_logits = zero_ablation_hook() # shape: (layers, heads, batch, seq_len, vocab)
 zero_ablation_probs = t.softmax(zero_ablation_logits[..., -1, :], dim=-1) # shape: (layers, heads, batch, vocab)
 zero_ablation_correct_probs = zero_ablation_probs[..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
-
+zero_ablation_correct_logits = zero_ablation_logits[..., -1, :][..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
 # Find average (across the batches) correct probability difference, for each (layer, head) activation
 zero_ablation_prob_diff = t.mean(zero_ablation_correct_probs - no_ablation_correct_probs, dim=-1) # shape: (layers, heads)
+# Find average (across the batches) correct logit difference, for each (layer, head) activation
+zero_ablation_logit_diff = t.mean(zero_ablation_correct_logits - no_ablation_correct_logits, dim=-1) # shape: (layers, heads)
 
 #%%
+# Find correct probs for random ablation method
 random_ablation_logits = random_ablation_hook() # shape: (layers, heads, batch, seq_len, vocab)
-print(random_ablation_logits.shape)
+random_ablation_probs = t.softmax(random_ablation_logits[..., -1, :], dim=-1) # shape: (layers, heads, batch, vocab)
+random_ablation_correct_probs = random_ablation_probs[..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
+random_ablation_correct_logits = random_ablation_logits[..., -1, :][..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
+# Find average (across the batches) correct probability difference, for each (layer, head) activation
+random_ablation_prob_diff = t.mean(random_ablation_correct_probs - no_ablation_correct_probs, dim=-1) # shape: (layers, heads)
+# Find average (across the batches) correct logit difference, for each (layer, head) activation
+random_ablation_logit_diff = t.mean(random_ablation_correct_logits - no_ablation_correct_logits, dim=-1) # shape: (layers, heads)
+
+#%%
+# Find correct probs for mean ablation method
+mean_ablation_logits = mean_ablation_hook() # shape: (layers, heads, batch, seq_len, vocab)
+mean_ablation_probs = t.softmax(mean_ablation_logits[..., -1, :], dim=-1) # shape: (layers, heads, batch, vocab)
+mean_ablation_correct_probs = mean_ablation_probs[..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
+mean_ablation_correct_logits = mean_ablation_logits[..., -1, :][..., t.arange(len(days)), answer_tokens] # shape: (layers, heads, batch)
+# Find average (across the batches) correct probability difference, for each (layer, head) activation
+mean_ablation_prob_diff = t.mean(mean_ablation_correct_probs - no_ablation_correct_probs, dim=-1) # shape: (layers, heads)
+# Find average (across the batches) correct logit difference, for each (layer, head) activation
+mean_ablation_logit_diff = t.mean(mean_ablation_correct_logits - no_ablation_correct_logits, dim=-1) # shape: (layers, heads)
+
 # %%
-curr_fig = make_subplots(rows=1, cols=3, subplot_titles=["Zero ablation", "Random ablation", "Mean ablation"], horizontal_spacing=0.05,
+# Display plots for change in correct probs for 3 methods of ablation: zero, random, mean
+prob_fig = make_subplots(rows=1, cols=3, subplot_titles=["Zero ablation", "Random ablation", "Mean ablation"], horizontal_spacing=0.05,
                          x_title='Layer',
                           y_title='Head')
-curr_fig.update_layout(title_text="Change in correct probs", height=300, width=200*3)
+prob_fig.update_layout(title_text="Change in Correct Probs", height=300, width=200*3)
 
-curr_fig.update_layout(coloraxis_autocolorscale=False, coloraxis_colorscale="plasma_r")
+prob_fig.update_layout(coloraxis_autocolorscale=False, coloraxis_colorscale="plasma_r")
 
-zero_fig = px.imshow(zero_ablation_prob_diff.T.cpu())
+zero_prob_fig = px.imshow(zero_ablation_prob_diff.T.cpu())
 
-#random_fig = px.imshow(random_avg_probs.T)
+rando_prob_fig = px.imshow(random_ablation_prob_diff.T.cpu())
 
-#mean_fig = px.imshow(mean_avg_probs.T)
+mean_prob_fig = px.imshow(mean_ablation_prob_diff.T.cpu())
 
-curr_fig.append_trace(zero_fig.data[0], row=1, col=1)
-#curr_fig.append_trace(random_fig.data[0], row=1, col=2)
-#curr_fig.append_trace(mean_fig.data[0], row=1, col=3)
+prob_fig.append_trace(zero_prob_fig.data[0], row=1, col=1)
+prob_fig.append_trace(rando_prob_fig.data[0], row=1, col=2)
+prob_fig.append_trace(mean_prob_fig.data[0], row=1, col=3)
 
-curr_fig.show()
+prob_fig.show()
 
 # %%
+# Display plots for change in correct logits for 3 methods of ablation: zero, random, mean
+logit_fig = make_subplots(rows=1, cols=3, subplot_titles=["Zero ablation", "Random ablation", "Mean ablation"], horizontal_spacing=0.05,
+                         x_title='Layer',
+                          y_title='Head')
+logit_fig.update_layout(title_text="Change in Correct Logits", height=300, width=200*3)
+
+logit_fig.update_layout(coloraxis_autocolorscale=False, coloraxis_colorscale="viridis_r")
+
+zero_logit_fig = px.imshow(zero_ablation_logit_diff.T.cpu())
+
+random_logit_fig = px.imshow(random_ablation_logit_diff.T.cpu())
+
+mean_logit_fig = px.imshow(mean_ablation_logit_diff.T.cpu())
+
+logit_fig.append_trace(zero_logit_fig.data[0], row=1, col=1)
+logit_fig.append_trace(random_logit_fig.data[0], row=1, col=2)
+logit_fig.append_trace(mean_logit_fig.data[0], row=1, col=3)
+
+logit_fig.show()
 # %%
