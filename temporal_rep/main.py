@@ -331,10 +331,7 @@ for prompt in range(batch_size):
                 size=12,
                 color="white"
             ))
-
     logit_lens_fig.update_layout(title_text=prompt_titles[prompt], title_x=0.5)
-
     logit_lens_fig.show()
-
 
 # %%
