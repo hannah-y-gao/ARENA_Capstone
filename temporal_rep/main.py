@@ -25,6 +25,7 @@ import random
 # Load GPT-2 Small
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
 model = HookedTransformer.from_pretrained("gpt2-small").to(device)
+model.cfg.use_result_hook = True
 t.set_grad_enabled(False)
 
 # %%
@@ -138,7 +139,7 @@ def random_dataset_hook(
 random_dataset_hook()
 
 # Ablate each head with the random dataset attention heads
-@ablate_heads(prompts)
+@ablate_heads(prompt_tokens)
 def random_ablation_hook(
     attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
     hook: HookPoint,
@@ -172,7 +173,7 @@ def mean_dataset_hook(
 mean_dataset_hook()
 
 # Ablate each head with the random dataset attention heads
-@ablate_heads(prompts)
+@ablate_heads(prompt_tokens)
 def mean_ablation_hook(
     attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
     hook: HookPoint,
@@ -259,25 +260,87 @@ logit_fig.show()
 
 # %%
 # Select top k next tokens (by logit) for each attention head
+# top_k = 3 
+# logits_all_heads = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k))
+# x = 3
+
+# # Apply logit lens to a head
+# @ablate_heads(prompt_tokens, name="pattern")
+# def logit_lens_hook(
+#     activation_value: Float[Tensor, "batch position heads d_embed"],
+#     hook: HookPoint,
+#     layer_idx: int,
+#     head_idx: int
+# ):
+#     print("hello")
+#     unembed = nn.Sequential(
+#         model.ln_final,
+#         model.unembed,
+#     )
+#     #unembed the result from this attention head
+#     unembedded_output = unembed(activation_value) # shape: (batch, position, heads, )
+#     global x
+#     x = unembedded_output
+#     #logit_all_heads[:, layer_idx, head_idx, :] = unembedded_output[]
+
+
+# logit_lens_hook()
+# print(x)
+# %%
+# Logit Lens
+
 top_k = 3 
-logits_all_heads = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k))
+all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k)).to(device) #stores indices of tokens
+all_top_k_strings = [] #stores string representation, shape: (batch, layers, heads)
 
-# Apply logit lens to a head
-@ablate_heads(prompt_tokens, name="result")
 def logit_lens_hook(
-    activation_value: Float[Tensor, "batch position heads d_embed"],
+    activation_value: Float[Tensor, "batch position heads d_head"],
     hook: HookPoint,
+    starting_space: bool,
     layer_idx: int,
-    head_idx: int
 ):
-    # unembed = nn.Sequential(
-    #     model.ln_final,
-    #     model.unembed,
-    # )
-    #unembedded_output = unembed(activation_value) #unembed the result from this attention head
-    print("hello")
+    W_O = model.W_O[layer_idx] # shape: (head, d_head, d_model)
+    result = einops.einsum(activation_value, W_O, 'batch position heads d_head, heads d_head d_model -> batch heads position d_model')
+    
+    ln_result = model.ln_final(result)
+    unembed_result = einops.einsum(ln_result, model.W_U, 'batch heads position d_model, d_model d_vocab -> batch heads position d_vocab')
+    final_logits = t.softmax(unembed_result[..., -1, :], dim=-1) # shape: (batch, heads, d_vocab)
+    top_k_dict = t.topk(final_logits, k=model.cfg.d_vocab, dim=-1) # shape: (batch, heads, d_vocab)
+    top_k_tokens = top_k_dict.indices # shape: (batch, heads, top_k)
+    
+    top_k_strings = [] # shape" (batch, heads)
+    for b in range(batch_size):
+        batch_strings = []
+        for h in range(model.cfg.n_heads):
+            #print(model.to_string(top_k_tokens[b, h, 0]))
+            #top_k_strings[b, h] = "\n".join([model.to_string(top_k_tokens[b, h, i]) for i in range(top_k)])
+            string = ""
+            count = 0
+            for i in range(model.cfg.d_vocab):
+                if count >= top_k:
+                    break
+                next_string = model.to_string(top_k_tokens[b, h, i])
+                # print(f"{next_string=}")
+                if (not starting_space) or next_string[0] == " ":
+                    string += ("\n" + next_string)
+                    count+=1
+            # string = ("\n".join([model.to_string(top_k_tokens[b, h, i]) for i in range(top_k)]))
+            batch_strings.append(string)
+            # print(type(string))
+        top_k_strings.append(batch_strings)
+    all_top_k_strings.append(top_k_strings)
+    print(np.array(all_top_k_strings).shape)
+    all_top_k_indices[:, layer_idx, :, :] = top_k_tokens[..., :top_k]
 
-logit_lens_hook()
+
+# Run logit lens on each layer
+def logit_lens(starting_space):
+    batch_size = len(prompt_tokens)
+    all_logits = t.zeros((model.cfg.n_layers, model.cfg.n_heads, batch_size, seq_length, model.cfg.d_vocab)).to(device)
+    for layer in range(model.cfg.n_layers):
+        temp_hook_fn = functools.partial(logit_lens_hook, layer_idx=layer, starting_space=starting_space)
+        ablated_logits = model.run_with_hooks(prompt_tokens, fwd_hooks = [(utils.get_act_name("z", layer), temp_hook_fn)], prepend_bos=True,)
+
 # %%
-print(model)
-# %%
+# Run logit lens
+logit_lens(starting_space=True)
