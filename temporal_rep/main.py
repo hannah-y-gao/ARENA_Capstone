@@ -259,38 +259,12 @@ logit_fig.append_trace(mean_logit_fig.data[0], row=1, col=3)
 logit_fig.show()
 
 # %%
-# Select top k next tokens (by logit) for each attention head
-# top_k = 3 
-# logits_all_heads = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k))
-# x = 3
-
-# # Apply logit lens to a head
-# @ablate_heads(prompt_tokens, name="pattern")
-# def logit_lens_hook(
-#     activation_value: Float[Tensor, "batch position heads d_embed"],
-#     hook: HookPoint,
-#     layer_idx: int,
-#     head_idx: int
-# ):
-#     print("hello")
-#     unembed = nn.Sequential(
-#         model.ln_final,
-#         model.unembed,
-#     )
-#     #unembed the result from this attention head
-#     unembedded_output = unembed(activation_value) # shape: (batch, position, heads, )
-#     global x
-#     x = unembedded_output
-#     #logit_all_heads[:, layer_idx, head_idx, :] = unembedded_output[]
-
-
-# logit_lens_hook()
-# print(x)
-# %%
 # Logit Lens
 
 top_k = 3 
-all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k)).to(device) #stores indices of tokens, shape: (batch, layers, heads, top_k)
+all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k)).to(device) #stores indices of top k tokens, shape: (batch, layers, heads, top_k)
+all_probs= t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
+
 all_top_k_strings = [] #stores string representation, shape: (layers, batch, heads)
 
 def logit_lens_hook(
@@ -304,33 +278,30 @@ def logit_lens_hook(
     
     ln_result = model.ln_final(result)
     unembed_result = einops.einsum(ln_result, model.W_U, 'batch heads position d_model, d_model d_vocab -> batch heads position d_vocab')
-    final_logits = t.softmax(unembed_result[..., -1, :], dim=-1) # shape: (batch, heads, d_vocab)
-    top_k_dict = t.topk(final_logits, k=model.cfg.d_vocab, dim=-1) # shape: (batch, heads, d_vocab)
-    top_k_tokens = top_k_dict.indices # shape: (batch, heads, top_k)
+    final_probs = t.softmax(unembed_result[..., -1, :], dim=-1) # shape: (batch, heads, d_vocab)
+    top_k_dict = t.topk(final_probs, k=model.cfg.d_vocab, dim=-1) # shape: (batch, heads, d_vocab)
+    top_k_tokens = top_k_dict.indices # sorted, shape: (batch, heads, d_vocab)
+    top_k_probs = top_k_dict.values # sorted, shape: (batch, heads, d_vocab)
     
     top_k_strings = [] # shape" (batch, heads)
     for b in range(batch_size):
         batch_strings = []
         for h in range(model.cfg.n_heads):
-            #print(model.to_string(top_k_tokens[b, h, 0]))
-            #top_k_strings[b, h] = "\n".join([model.to_string(top_k_tokens[b, h, i]) for i in range(top_k)])
             string = ""
             count = 0
             for i in range(model.cfg.d_vocab):
                 if count >= top_k:
                     break
                 next_string = model.to_string(top_k_tokens[b, h, i])
-                # print(f"{next_string=}")
                 if (not starting_space) or next_string[0] == " ":
-                    string += ("\n" + next_string)
+                    string += (next_string) + "<br />"
                     count+=1
-            # string = ("\n".join([model.to_string(top_k_tokens[b, h, i]) for i in range(top_k)]))
             batch_strings.append(string)
-            # print(type(string))
         top_k_strings.append(batch_strings)
+    
     all_top_k_strings.append(top_k_strings)
-    print(np.array(all_top_k_strings).shape)
-    all_top_k_indices[:, layer_idx, :, :] = top_k_tokens[..., :top_k]
+    all_top_k_indices[:, layer_idx, :, :] = top_k_tokens[..., :top_k]    
+    all_probs[:, layer_idx, :] = final_probs[t.arange(batch_size), :, answer_tokens]
 
 
 # Run logit lens on each layer
@@ -345,4 +316,25 @@ def logit_lens(starting_space):
 # Run logit lens
 logit_lens(starting_space=True)
 
-#
+# Prepare matrices for plotting
+string_matrix = einops.rearrange(np.array(all_top_k_strings), 'layers batch heads -> batch layers heads')
+prob_matrix = all_probs
+# %%
+# Plots for each prompt
+prompt_titles = [f"{days[i]} ---> {days[(i+1)%len(days)]}" for i in range(len(days))]
+print(prompt_titles)
+for prompt in range(batch_size):
+    logit_lens_fig = px.imshow(prob_matrix[prompt].cpu().detach().T, range_color=(0,1), origin="lower", height=1100, width=1300,
+                         labels=dict(x="layers", y="heads"))
+    logit_lens_fig.update_traces(text=string_matrix[prompt].T, texttemplate="%{text}", textfont=dict(
+                family="Courier New, monospace",
+                size=12,
+                color="white"
+            ))
+
+    logit_lens_fig.update_layout(title_text=prompt_titles[prompt], title_x=0.5)
+
+    logit_lens_fig.show()
+
+
+# %%
