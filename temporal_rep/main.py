@@ -290,8 +290,8 @@ logit_fig.show()
 # Logit Lens
 
 top_k = 3 
-all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k)).to(device) #stores indices of tokens
-all_top_k_strings = [] #stores string representation, shape: (batch, layers, heads)
+all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k)).to(device) #stores indices of tokens, shape: (batch, layers, heads, top_k)
+all_top_k_strings = [] #stores string representation, shape: (layers, batch, heads)
 
 def logit_lens_hook(
     activation_value: Float[Tensor, "batch position heads d_head"],
@@ -344,3 +344,5 @@ def logit_lens(starting_space):
 # %%
 # Run logit lens
 logit_lens(starting_space=True)
+
+#
