@@ -534,3 +534,24 @@ for i in range(len(y_values)//2):
 fig_logit_diffs = px.line(x=x_values, y=y_values_diff, title="Difference in correct probs before and after each MLP", labels={'x': 'Layer', 'y': 'Avg. difference in correct probs'})
 fig_logit_diffs.show()
 # %%
+# Examine logits for layer 9 before and after the MLP
+logits_MLP_9 = [] # logits_pre_MLP_9, logits_post_MLP_9
+
+def MLP_9_logit_lens_hook(
+    residual: Float[Tensor, "batch seq d_model"],
+    hook: HookPoint,
+):
+    logits = unembed(residual) # shape: (batch, seq, d_vocab)
+    logits_matrix = logits[:, -1, subject_tokens]
+    logits_MLP_9.append(logits_matrix)
+
+model.run_with_hooks(prompt_tokens, fwd_hooks = [("blocks.9.hook_resid_mid", MLP_9_logit_lens_hook)])
+model.run_with_hooks(prompt_tokens, fwd_hooks = [("blocks.9.hook_resid_post", MLP_9_logit_lens_hook)])
+
+logits_pre_MLP_9, logits_post_MLP_9 = logits_MLP_9
+# %%
+# Plot logits for layer 9 before and after the MLP
+plot_pixels(prompt_tokens, logits_pre_MLP_9, prompt_titles, desc="Layer 9 pre-MLP")
+plot_pixels(prompt_tokens, logits_post_MLP_9, prompt_titles, desc="Layer 9 post-MLP")
+
+# %%

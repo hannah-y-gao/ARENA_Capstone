@@ -93,6 +93,10 @@ For the *differences* in probabilities between pre- and post- MLP locations in t
 - MLP_8 and MLP_9 are constructive (caused an increase in correct probs)
 - Overall, MLP_10 appears to be the most destructive while MLP_9 seems the most constructive
 
+## Pre- and post- layer 9 MLP
 
-## Summary of current theory
-- Heads (9, 1) and (10, 3) are 
+Normalized logit predictions for each day across all prompts pre-MLP-9:
+![Normalized logits pre MLP 9](./temporal_rep/imgs/L9_pre.png "Normalized logits pre MLP 9")
+
+Normalized logit predictions for each day across all prompts post-MLP-9:
+![Normalized logits post MLP 9](./temporal_rep/imgs/L9_post.png "Normalized logits post MLP 9")
