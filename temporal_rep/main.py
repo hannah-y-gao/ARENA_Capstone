@@ -121,6 +121,29 @@ def plot_pixels(prompts, logit_matrices, titles, desc="diff.", midpoint=True):
     fig_for_logit.append_trace(logit_figs[0].data[0], row=1, col=1)
 
     fig_for_logit.show()
+
+def plot_pixels_all(prompts, logit_matrices, titles, desc="diff.", midpoint=True):
+
+    # logit_matrices: (prompts, layers, heads, days)
+
+    logit_figs = []
+    fig_for_logit = make_subplots(rows=12, cols=12, x_title="Day token", y_title="Prompt", horizontal_spacing=0.05)
+    fig_for_logit.update_layout(title_text=f"{desc}", height=400, width=400)
+    r = 1
+    c = 1
+    i = 0
+    for layer in range(model.cfg.n_layers):
+        for head in range(model.cfg.n_heads):
+            single_plot = logit_matrices[:, layer, head, :]
+            logit_fig = show_pp(single_plot.T.cpu().detach().numpy(), xlabel='Day token', ylabel='Prompt', return_fig=True, show_fig=False, midpoint=midpoint)
+            logit_figs.append(logit_fig)
+            fig_for_logit.append_trace(logit_figs[i].data[0], row=r, col=c)
+            c+=1
+            i+=1
+        r+=1
+        c=1
+
+    fig_for_logit.show()
 # %%
 # Generate regular prompts
 days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -353,6 +376,7 @@ all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, 
 all_probs= t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
 subject_probs = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
 subject_logits = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
+days_logits = t.zeros((len(prompt_tokens), model.cfg.n_layers, model.cfg.n_heads, len(days))).to(device) #stores logits of all days for every prompt, shape: (prompts, layers, heads, days)
 
 all_top_k_strings = [] #stores string representation, shape: (layers, batch, heads)
 
@@ -367,7 +391,7 @@ def logit_lens_hook(
     
     ln_result = model.ln_final(result)
     unembed_result = einops.einsum(ln_result, model.W_U, 'batch heads position d_model, d_model d_vocab -> batch heads position d_vocab')
-    final_logits = unembed_result[..., -1, :]
+    final_logits = unembed_result[..., -1, :] # shape: (batch, heads, d_vocab)
     final_probs = t.softmax(final_logits, dim=-1) # shape: (batch, heads, d_vocab)
     top_k_dict = t.topk(final_probs, k=model.cfg.d_vocab, dim=-1) # shape: (batch, heads, d_vocab)
     top_k_tokens = top_k_dict.indices # sorted, shape: (batch, heads, d_vocab)
@@ -394,6 +418,7 @@ def logit_lens_hook(
     all_probs[:, layer_idx, :] = final_probs[t.arange(batch_size), :, answer_tokens]
     subject_probs[:, layer_idx, :] = final_probs[t.arange(batch_size), :, subject_tokens]
     subject_logits[:, layer_idx, :] = final_logits[t.arange(batch_size), :, subject_tokens]
+    days_logits[:, layer_idx, ...] = final_logits[..., subject_tokens]
 
 # Run logit lens on each layer
 def logit_lens(starting_space):
@@ -428,6 +453,20 @@ for prompt in range(batch_size):
 # %%
 # Investigate behavior of head (10, 3)
 general_plot_logits_probs(prompt_tokens, subject_logits, subject_probs, prompt_titles)
+
+# %%
+# Visualize attention patterns for each head
+layer = 10
+attention_pattern = activations["pattern", layer]
+sample_prompt = "If today is Monday, tomorrow is"
+
+print(f"Layer {layer} Head Attention Patterns:")
+display(cv.attention.attention_patterns(
+    tokens=model.to_str_tokens(sample_prompt), 
+    attention=attention_pattern[0],
+    attention_head_names=[f"L{layer}H{i}" for i in range(12)],
+))
+
 # %%
 # Display attention pattern for a particular head
 def attn_pattern_hook(
@@ -436,9 +475,62 @@ def attn_pattern_hook(
     layer_idx: int,
     head_idx: int
 ):
-    head_pattern = attn_pattern[:, head_idx, ...]
+    head_pattern = attn_pattern[:, head_idx, ...] # shape: (batch, seqQ, seqK)
+    plot_pixels(prompt_tokens, head_pattern.mean(0), prompt_titles, desc="9.1")
 # Investigate attention pattern of head (9, 1)
 temp_attn_pattern_hook = functools.partial(attn_pattern_hook, layer_idx=9, head_idx = 1)
-logits = model.run_with_hooks(prompt_tokens, fwd_hooks = [(utils.get_act_name("pattern", 9), temp_attn_pattern_hook)], prepend_bos=True,)
+model.run_with_hooks(prompt_tokens, fwd_hooks = [(utils.get_act_name("pattern", 9), temp_attn_pattern_hook)], prepend_bos=True,)
 # %%
-#
+# Investigate the logits for each day for head (9, 1)
+layer = 9
+head = 1
+logits = days_logits[:, layer, head, :]
+plot_pixels(prompts, logits, prompt_titles, desc=f"Logits for head {layer}.{head}")
+
+# Investigate the logits for each day for head (10, 3)
+layer = 10
+head = 3
+logits = days_logits[:, layer, head, :]
+plot_pixels(prompts, logits, prompt_titles, desc=f"Logits for head {layer}.{head}")
+
+# %%
+# Examine role of MLPs
+# Plot logits in the residual stream before and after each MLP  
+x_values = []
+y_values = []
+
+unembed = nn.Sequential(model.ln_final, model.unembed)
+def MLP_logits_hook(
+    residual: Float[Tensor, "batch seq d_model"],
+    hook: HookPoint,
+):   
+    logits = unembed(residual) # shape: (batch, seq, d_vocab)
+    probs = t.softmax(logits, dim=-1)
+    correct_probs = probs[t.arange(len(prompt_tokens)), -1, answer_tokens] # shape: (batch)
+    y_values.append(t.mean(correct_probs, dim=0).item())
+
+for layer in range(model.cfg.n_layers):
+    x_values.append(f"MLP_{layer}_pre")
+    logits_mid = model.run_with_hooks(prompt_tokens, fwd_hooks = [(f"blocks.{layer}.hook_resid_mid", MLP_logits_hook)], prepend_bos=True,)
+    x_values.append(f"MLP_{layer}_post")
+    logits_post = model.run_with_hooks(prompt_tokens, fwd_hooks = [(f"blocks.{layer}.hook_resid_post", MLP_logits_hook)], prepend_bos=True,)
+
+fig_logits = px.line(x=x_values, y=y_values, title="Correct probs before and after each MLP", labels={'x': 'Layer', 'y': 'Avg. correct probs'})
+fig_logits.show()
+
+# %%
+x_values = []
+y_values = []
+
+for layer in range(model.cfg.n_layers):
+    x_values.append(f"MLP_{layer}")
+    model.run_with_hooks(prompt_tokens, fwd_hooks = [(f"blocks.{layer}.hook_resid_mid", MLP_logits_hook)], prepend_bos=True,)
+    model.run_with_hooks(prompt_tokens, fwd_hooks = [(f"blocks.{layer}.hook_resid_post", MLP_logits_hook)], prepend_bos=True,)
+
+y_values_diff = []
+for i in range(len(y_values)//2):
+    y_values_diff.append(y_values[2*i+1] - y_values[2*i])
+
+fig_logit_diffs = px.line(x=x_values, y=y_values_diff, title="Difference in correct probs before and after each MLP", labels={'x': 'Layer', 'y': 'Avg. difference in correct probs'})
+fig_logit_diffs.show()
+# %%

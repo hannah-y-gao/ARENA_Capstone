@@ -25,7 +25,6 @@ Note: the color gradient is based on the correct probabilites at each head
 ![Top 3 commonly predicted tokens for every head in GPT2-small](./temporal_rep/imgs/SSu.png "Saturday --> Sunday prediction")
 
 ### Observations from plots
-
 - Head (10, 3) consistently predicts days in its top three; however, it almost always most strongly predicts the *subject day* rather than the correct *subsequent day*
     - The top 3 days predicted by this head always includes the correct *subsequent day*
     - Exception: this head predicts the correct *subsequent day* when the *subject day* is Tuesday (i.e. it most strongly predicts Wednesday)
@@ -33,10 +32,16 @@ Note: the color gradient is based on the correct probabilites at each head
 - Head (9, 1) seems to be a day predictor
 
 ## Attention head patterns
+**Note: The first tokens on both axes in the attention patterns are the BOS token. On the attention pattern grids, the y-axis represents queries from tokens 0-7 (from top to bottom) while the x-axis represents keys from tokens 0-7 (from left to right) 
 
 We can further examine the attention patterns of heads (9, 1) and (10, 3):
 ![Attention pattern for head (9, 1)](./temporal_rep/imgs/Layer9Pattern.png "Attention pattern for head (9, 1)")
+
+Most tokens seem to attend to the BOS token. The "is" token very slightly attends to the *subject day* token.
+
 ![Attention pattern for head (10, 3)](./temporal_rep/imgs/Layer10Pattern.png "Attention pattern for head (10, 3)")
+
+The tokens "is" and "," attend strongly to the *subject day* token (i.e. "Monday" in this example). This head also moderately pays attention to the token "today".
 
 ## Plots for the probabilities and logits of predicting subject tokens
 
@@ -50,11 +55,44 @@ We can further examine the attention patterns of heads (9, 1) and (10, 3):
     - (6, 9) with the exception of Wednesday->Thursday
     - occassionally (8, 1)
 
-## Examining head (9, 1)
+## Logit for all day-tokens across all prompts
+
+### Examining head (9, 1)
 The paper hypothesizes that head (9, 1) is the actual "next-day-prediction" head. Below is a plot showing the logits for all days for each prompt for the head (9, 1).
 
-![Logits of all day-tokens across all prompts for head (9, 1)](./temporal_rep/imgs/Logits-9-1.png "Logits of all days")
+![Logits of all day-tokens across all prompts for head (9, 1)](./temporal_rep/imgs/Logits-9-1.png "Logits of all days for (9, 1)")
 
 The diagonal below the main diagonal demonstrates particularly high logit values, supporting the theory that this head is the true next-token predicting head.
 
+### Examining head (10, 3)
+The paper hypothesizes that head (10, 3) is a head that simply copies information from the *subject day*. Below is a plot showing the logits for all days for each prompt for the head (10, 3).
 
+![Logits of all day-tokens across all prompts for head (10, 3)](./temporal_rep/imgs/Logits-9-1.png "Logits of all days for (10, 3)")
+
+The main diagonal demonstrates particularly high logit values, particularly for prompts with *subject day* Thursday through Saturday, supporting the theory that this head pushes the answer towards the *subject day*.
+
+## Examining the role of MLPs
+Apply logit lens in the residual stream before and after the MLP in each layer (i.e. at resid_mid and at resid_post).
+
+Graphing the correct probabilities at resid_pre (before MLP) and resid_post (after MLP) in each layer:
+
+![Correct probabilities pre and post MLP](./temporal_rep/imgs/MLP-probs.png "Correct probabilities pre and post MLP")
+
+Graphing the difference in correct probabilities between resid_pre and resid_post in each layer:
+
+![Difference in correct probabilities between resid_pre and resid_post](./temporal_rep/imgs/MLP-probs.png "Difference in correct probabilities between resid_pre and resid_post")
+
+### Observations
+For the correct probabilities pre- and post- MLP:
+- Sharp increase in correct probabilities at MLP_7_pre and MLP_10_pre (function of operations in attention layer 7 and attention layer 10)
+- Sharp increase in correct probabilities at MLP_9_post (function of operations in MLP of layer 9)
+- Sharp decrease in correct probabilities at MLP_11_pre
+
+For the *differences* in probabilities between pre- and post- MLP locations in the residual stream:
+- MLP_7, MLP_10, and MLP_11 seem to be destructive (caused a decrease in correct probs)
+- MLP_8 and MLP_9 are constructive (caused an increase in correct probs)
+- Overall, MLP_10 appears to be the most destructive while MLP_9 seems the most constructive
+
+
+## Summary of current theory
+- Heads (9, 1) and (10, 3) are 
