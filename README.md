@@ -67,7 +67,7 @@ The diagonal below the main diagonal demonstrates particularly high logit values
 ### Examining head (10, 3)
 The paper hypothesizes that head (10, 3) is a head that simply copies information from the *subject day*. Below is a plot showing the logits for all days for each prompt for the head (10, 3).
 
-![Logits of all day-tokens across all prompts for head (10, 3)](./temporal_rep/imgs/Logits-9-1.png "Logits of all days for (10, 3)")
+![Logits of all day-tokens across all prompts for head (10, 3)](./temporal_rep/imgs/Logits-10-3.png "Logits of all days for (10, 3)")
 
 The main diagonal demonstrates particularly high logit values, particularly for prompts with *subject day* Thursday through Saturday, supporting the theory that this head pushes the answer towards the *subject day*.
 
