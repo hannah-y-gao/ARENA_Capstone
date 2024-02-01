@@ -80,7 +80,7 @@ Graphing the correct probabilities at resid_pre (before MLP) and resid_post (aft
 
 Graphing the difference in correct probabilities between resid_pre and resid_post in each layer:
 
-![Difference in correct probabilities between resid_pre and resid_post](./temporal_rep/imgs/MLP-probs.png "Difference in correct probabilities between resid_pre and resid_post")
+![Difference in correct probabilities between resid_pre and resid_post](./temporal_rep/imgs/MLP-prob-diffs.png "Difference in correct probabilities between resid_pre and resid_post")
 
 ### Observations
 For the correct probabilities pre- and post- MLP:
