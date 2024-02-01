@@ -37,17 +37,104 @@ max_output = temp_output.argmax(-1)
 print(max_output)
 print(model.to_str_tokens(max_output))
 
+# %% 
+# Plotting functions from original LessWrong post:
+def show_pp(
+    m,
+    range_color=None,
+    xlabel="",
+    ylabel="",
+    title="",
+    bartitle="",
+    return_fig=False,
+    show_fig=True,
+    **kwargs,
+):
+    """
+    Plot a heatmap of the values in the matrix `m`
+    """
+
+    if range_color:
+
+        fig = px.imshow(
+            m.T,
+            title=title if title else "",
+            color_continuous_scale="magenta",
+            #color_continuous_midpoint=-1,
+            #**kwargs,
+            range_color=range_color,
+        )
+    else:
+        fig = px.imshow(
+            m.T,
+            title=title if title else "",
+            color_continuous_scale="magenta",
+        )
+
+    if show_fig:
+        fig.show()
+    if return_fig:
+        return fig
+    
+def general_plot_logits_probs(prompts, logit_matrices, prob_matrices, titles, width_step=200):
+
+    # logit_matrices, prob_matrices: (len(prompts), n_layers, n_heads)
+
+    logit_figs = []
+    prob_figs = []
+
+    for i in range(len(prompts)):
+        prob_fig = show_pp(prob_matrices[i].cpu().detach().numpy(), xlabel='layers', ylabel='heads', return_fig=True, show_fig=False)
+        logit_fig = show_pp(logit_matrices[i].cpu().detach().numpy(), xlabel='layers', ylabel='heads', return_fig=True, show_fig=False)
+
+        logit_figs.append(logit_fig)
+        prob_figs.append(prob_fig)
+
+    fig_for_prob = make_subplots(rows=1, cols=len(prompts), subplot_titles=titles, x_title="layers", y_title="heads", horizontal_spacing=0.05)
+    fig_for_prob.update_layout(title_text=f"Probabilities of subject tokens", height=300, width=width_step*len(prompts))
+
+    fig_for_logit = make_subplots(rows=1, cols=len(prompts), subplot_titles=titles, x_title="layers", y_title="heads", horizontal_spacing=0.05)
+    fig_for_logit.update_layout(title_text=f"Logits of subject tokens", height=300, width=width_step*len(prompts))
+
+    for i in range(len(prompts)):
+
+        fig_for_prob.append_trace(prob_figs[i].data[0], row=1, col=i+1)
+        fig_for_logit.append_trace(logit_figs[i].data[0], row=1, col=i+1)
+
+    fig_for_prob.show()
+    fig_for_logit.show()
+
+def plot_pixels(prompts, logit_matrices, titles, desc="diff.", midpoint=True):
+
+    # logit_matrices: (len(prompts), len(prompts))
+
+    logit_figs = []
+
+    logit_fig = show_pp(logit_matrices.T.cpu().detach().numpy(), xlabel='Day token', ylabel='Prompt', return_fig=True, show_fig=False, midpoint=midpoint)
+
+    logit_figs.append(logit_fig)
+
+    fig_for_logit = make_subplots(rows=1, cols=1, x_title="Day token", y_title="Prompt", horizontal_spacing=0.05)
+    fig_for_logit.update_layout(title_text=f"{desc}", height=400, width=400)
+
+
+    fig_for_logit.append_trace(logit_figs[0].data[0], row=1, col=1)
+
+    fig_for_logit.show()
 # %%
 # Generate regular prompts
 days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 prompts = []
 answers = []
+subjects = []
 for i in range(len(days)):
     prompts.append(f"If today is {days[i]}, tomorrow is")
     answers.append(" " + days[(i+1)%len(days)])
+    subjects.append(" " + days[i])
 
 prompt_tokens = model.to_tokens(prompts, prepend_bos=True)
 answer_tokens = model.to_tokens(answers, prepend_bos=False).reshape((len(days)))
+subject_tokens = model.to_tokens(subjects, prepend_bos=False).reshape((len(days)))
 
 seq_length = prompt_tokens.shape[-1]
 batch_size = prompt_tokens.shape[0]
@@ -264,6 +351,8 @@ logit_fig.show()
 top_k = 3 
 all_top_k_indices = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads, top_k)).to(device) #stores indices of top k tokens, shape: (batch, layers, heads, top_k)
 all_probs= t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
+subject_probs = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
+subject_logits = t.zeros((batch_size, model.cfg.n_layers, model.cfg.n_heads)).to(device) #stores probs of correct tokens, shape: (batch, layers, heads)
 
 all_top_k_strings = [] #stores string representation, shape: (layers, batch, heads)
 
@@ -278,7 +367,8 @@ def logit_lens_hook(
     
     ln_result = model.ln_final(result)
     unembed_result = einops.einsum(ln_result, model.W_U, 'batch heads position d_model, d_model d_vocab -> batch heads position d_vocab')
-    final_probs = t.softmax(unembed_result[..., -1, :], dim=-1) # shape: (batch, heads, d_vocab)
+    final_logits = unembed_result[..., -1, :]
+    final_probs = t.softmax(final_logits, dim=-1) # shape: (batch, heads, d_vocab)
     top_k_dict = t.topk(final_probs, k=model.cfg.d_vocab, dim=-1) # shape: (batch, heads, d_vocab)
     top_k_tokens = top_k_dict.indices # sorted, shape: (batch, heads, d_vocab)
     top_k_probs = top_k_dict.values # sorted, shape: (batch, heads, d_vocab)
@@ -302,7 +392,8 @@ def logit_lens_hook(
     all_top_k_strings.append(top_k_strings)
     all_top_k_indices[:, layer_idx, :, :] = top_k_tokens[..., :top_k]    
     all_probs[:, layer_idx, :] = final_probs[t.arange(batch_size), :, answer_tokens]
-
+    subject_probs[:, layer_idx, :] = final_probs[t.arange(batch_size), :, subject_tokens]
+    subject_logits[:, layer_idx, :] = final_logits[t.arange(batch_size), :, subject_tokens]
 
 # Run logit lens on each layer
 def logit_lens(starting_space):
@@ -314,14 +405,14 @@ def logit_lens(starting_space):
 
 # %%
 # Run logit lens
-logit_lens(starting_space=True)
+logit_lens(starting_space=False)
 
 # Prepare matrices for plotting
 string_matrix = einops.rearrange(np.array(all_top_k_strings), 'layers batch heads -> batch layers heads')
 prob_matrix = all_probs
 # %%
 # Plots for each prompt
-prompt_titles = [f"{days[i]} ---> {days[(i+1)%len(days)]}" for i in range(len(days))]
+prompt_titles = [f"{days[i]} -> {days[(i+1)%len(days)]}" for i in range(len(days))]
 print(prompt_titles)
 for prompt in range(batch_size):
     logit_lens_fig = px.imshow(prob_matrix[prompt].cpu().detach().T, range_color=(0,1), origin="lower", height=1100, width=1300,
@@ -335,3 +426,19 @@ for prompt in range(batch_size):
     logit_lens_fig.show()
 
 # %%
+# Investigate behavior of head (10, 3)
+general_plot_logits_probs(prompt_tokens, subject_logits, subject_probs, prompt_titles)
+# %%
+# Display attention pattern for a particular head
+def attn_pattern_hook(
+    attn_pattern: Float[Tensor, "batch heads seqQ seqK"],
+    hook: HookPoint,
+    layer_idx: int,
+    head_idx: int
+):
+    head_pattern = attn_pattern[:, head_idx, ...]
+# Investigate attention pattern of head (9, 1)
+temp_attn_pattern_hook = functools.partial(attn_pattern_hook, layer_idx=9, head_idx = 1)
+logits = model.run_with_hooks(prompt_tokens, fwd_hooks = [(utils.get_act_name("pattern", 9), temp_attn_pattern_hook)], prepend_bos=True,)
+# %%
+#

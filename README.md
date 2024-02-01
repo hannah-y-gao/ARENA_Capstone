@@ -26,7 +26,11 @@ Note: correct probabilty/logit refers to the probability/logit of predicting the
     - The top 3 days predicted by this head always includes the correct *subsequent day*
     - Exception: this head predicts the correct *subsequent day* when the *subject day* is Tuesday (i.e. it most strongly predicts Wednesday)
 - Head (8, 1) also consistently predicts days in its top three (somewhat at random); it strongly predicts the correct token following Tuesday
+- Head (9, 1) seems to be a day predictor
 
+We can further examine the attention patterns of heads (9, 1) and (10, 3):
+![Attention pattern for head (9, 1)](./temporal_rep/imgs/Layer9Pattern.png "Attention pattern for head (9, 1)")
+![Attention pattern for head (10, 3)](./temporal_rep/imgs/Layer10Pattern.png "Attention pattern for head (10, 3)")
 
 ## Plots for the probabilities and logits of predicting subject tokens
 
