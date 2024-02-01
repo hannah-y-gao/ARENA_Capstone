@@ -100,3 +100,5 @@ Normalized logit predictions for each day across all prompts pre-MLP-9:
 
 Normalized logit predictions for each day across all prompts post-MLP-9:
 ![Normalized logits post MLP 9](./temporal_rep/imgs/L9_post.png "Normalized logits post MLP 9")
+
+MLP_9 shifts logits from the main diagonal to right below the diagonal.
