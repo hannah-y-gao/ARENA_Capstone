@@ -51,4 +51,10 @@ We can further examine the attention patterns of heads (9, 1) and (10, 3):
     - occassionally (8, 1)
 
 ## Examining head (9, 1)
-The paper hypothesizes that head (9, 1) is the actual "next-day-prediction" head.
+The paper hypothesizes that head (9, 1) is the actual "next-day-prediction" head. Below is a plot showing the logits for all days for each prompt for the head (9, 1).
+
+![Logits of all day-tokens across all prompts for head (9, 1)](./temporal_rep/imgs/Logits-9-1.png "Logits of all days")
+
+The diagonal below the main diagonal demonstrates particularly high logit values, supporting the theory that this head is the true next-token predicting head.
+
+
