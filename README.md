@@ -32,6 +32,8 @@ Note: the color gradient is based on the correct probabilites at each head
 - Head (8, 1) also consistently predicts days in its top three (somewhat at random); it strongly predicts the correct token following Tuesday
 - Head (9, 1) seems to be a day predictor
 
+## Attention head patterns
+
 We can further examine the attention patterns of heads (9, 1) and (10, 3):
 ![Attention pattern for head (9, 1)](./temporal_rep/imgs/Layer9Pattern.png "Attention pattern for head (9, 1)")
 ![Attention pattern for head (10, 3)](./temporal_rep/imgs/Layer10Pattern.png "Attention pattern for head (10, 3)")
