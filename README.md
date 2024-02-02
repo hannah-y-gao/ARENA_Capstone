@@ -104,7 +104,17 @@ Normalized logit predictions for each day across all prompts post-MLP-9:
 MLP_9 shifts logits from the main diagonal to right below the diagonal.
 
 ## Final circuit components
-Embedding --> MLP_0 --> h (9, 1) + h (10, 3) --> Unembedding
+**Embedding --> MLP_0 --> h (9, 1) + h (10, 3) --> Unembedding**
+(Image credits to the original post)
+![Circuit](./temporal_rep/imgs/Circuit_0.webp "Circuit with MLP 0")
+Probabilities of correct tokens:  [0.2806, 0.3363, 0.1380, 0.1386, 0.0562, 0.1253, 0.0528]
 
-Output logits: [0.2616, 0.3394, 0.1446, 0.1519, 0.0591, 0.1306, 0.0453]
+**Embedding --> MLP_0 --> h (9, 1) + h (10, 3) --> MLP_9 --> Unembedding**
+![Circuit](./temporal_rep/imgs/Circuit_0_9.webp "Circuit with MLP 0 and 9")
+(Image credits to the original post)
+Probabilities of correct tokens: [0.5068, 0.8984, 0.7088, 0.5942, 0.5724, 0.6629, 0.2436]
+
+
+
+
 

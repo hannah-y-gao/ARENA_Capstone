@@ -612,6 +612,7 @@ fwd_hooks_no_MLP_9 = [
 logits = model.run_with_hooks(prompts, fwd_hooks=fwd_hooks_no_MLP_9)
 probs_no_MLP_9 = logits.softmax(dim=-1)
 print("Probabilities of correct tokens: ", probs_no_MLP_9[t.arange(len(prompt_tokens)), -1, answer_tokens])
+print("Probabilities of subject tokens: ", probs_no_MLP_9[t.arange(len(prompt_tokens)), -1, subject_tokens])
 
 fwd_hooks_MLP_9 = [("blocks.9.hook_resid_mid", functools.partial(replace_output_hook, names=["layer_9_out", "layer_10_out"])),
                ('blocks.9.hook_mlp_out', functools.partial(save_output_hook, name="mlp_9_out")),
@@ -621,4 +622,6 @@ fwd_hooks_MLP_9 = [("blocks.9.hook_resid_mid", functools.partial(replace_output_
 logits = model.run_with_hooks(prompts, fwd_hooks=fwd_hooks_MLP_9)
 probs_MLP_9 = logits.softmax(dim=-1)
 print("Probabilities of correct tokens: ", probs_MLP_9[t.arange(len(prompt_tokens)), -1, answer_tokens])
+print("Probabilities of subject tokens: ", probs_MLP_9[t.arange(len(prompt_tokens)), -1, subject_tokens])
+
 # %%
