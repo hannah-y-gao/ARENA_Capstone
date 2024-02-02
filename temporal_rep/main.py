@@ -624,4 +624,3 @@ probs_MLP_9 = logits.softmax(dim=-1)
 print("Probabilities of correct tokens: ", probs_MLP_9[t.arange(len(prompt_tokens)), -1, answer_tokens])
 print("Probabilities of subject tokens: ", probs_MLP_9[t.arange(len(prompt_tokens)), -1, subject_tokens])
 
-# %%

@@ -118,6 +118,7 @@ Probabilities of correct tokens:  [0.2806, 0.3363, 0.1380, 0.1386, 0.0562, 0.125
 
 Probabilities of correct tokens: [0.5068, 0.8984, 0.7088, 0.5942, 0.5724, 0.6629, 0.2436]
 
+**Compare this to the original correct probabilities for the entire GPT-2-small model:** [0.2212, 0.2244, 0.2104, 0.2059, 0.2226, 0.3074, 0.1988]
 
 
 
