@@ -104,4 +104,7 @@ Normalized logit predictions for each day across all prompts post-MLP-9:
 MLP_9 shifts logits from the main diagonal to right below the diagonal.
 
 ## Final circuit components
-Embedding --> MLP_0 --> h (9, 1) + h (10, 3) --> MLP_9 --> Unembedding
+Embedding --> MLP_0 --> h (9, 1) + h (10, 3) --> Unembedding
+
+Output logits: [0.2616, 0.3394, 0.1446, 0.1519, 0.0591, 0.1306, 0.0453]
+
