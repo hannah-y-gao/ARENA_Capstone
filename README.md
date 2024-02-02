@@ -102,3 +102,6 @@ Normalized logit predictions for each day across all prompts post-MLP-9:
 ![Normalized logits post MLP 9](./temporal_rep/imgs/L9_post.png "Normalized logits post MLP 9")
 
 MLP_9 shifts logits from the main diagonal to right below the diagonal.
+
+## Final circuit components
+Embedding --> MLP_0 --> h (9, 1) + h (10, 3) --> MLP_9 --> Unembedding
