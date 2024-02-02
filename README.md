@@ -8,7 +8,7 @@ This paper explores a potential circuit for understanding temporal relations in 
 
 It is shown that a circuit as simple as 2 attention heads and 2 MLP layers is sufficient for this task and that this circuit generalizes well to other tasks involving temporal relations.
 
-## Plots for change in the correct probabilities and correct logits
+## Logit Lens: Plots for change in the correct probabilities and correct logits
 *The change in correct probabilities and correct logits after ablating head (i, j) according to zero ablation, random ablation, and mean ablation*
 
 Note: correct probabilty/logit refers to the probability/logit of predicting the correct subsequent day 
