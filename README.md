@@ -3,6 +3,10 @@
 
 This is a replication of the results from [Mechanistically interpreting time in GPT-2 small](https://www.lesswrong.com/posts/6tHNM2s6SWzFHv3Wo/mechanistically-interpreting-time-in-gpt-2-small).
 
+## Overview
+This paper explores a potential circuit for understanding temporal relations in GPT-2-small. More specifically, the task is to find a circuit that can accurately complete prompts in the following form: "If today is [some day], then tomorrow is ____". 
+
+It is shown that a circuit as simple as 2 attention heads and 2 MLP layers is sufficient for this task and that this circuit generalizes well to other tasks involving temporal relations.
 
 ## Plots for change in the correct probabilities and correct logits
 *The change in correct probabilities and correct logits after ablating head (i, j) according to zero ablation, random ablation, and mean ablation*
@@ -117,8 +121,16 @@ Probabilities of correct tokens:  [0.2806, 0.3363, 0.1380, 0.1386, 0.0562, 0.125
 (Image credits to the original post)
 
 Probabilities of correct tokens: [0.5068, 0.8984, 0.7088, 0.5942, 0.5724, 0.6629, 0.2436]
+*Note: the original paper got higher probabilities, in which case the circuit would produce the correct answer for every prompt.
 
 **Compare this to the original correct probabilities for the entire GPT-2-small model:** [0.2212, 0.2244, 0.2104, 0.2059, 0.2226, 0.3074, 0.1988]
+
+## Application to similar tasks
+Note: It turns out that this general circuit pattern works for predicting months as well, i.e. predicting something of the form "If this month is [some month], next month is ____"
+
+Using the same general circuit (except changing the attention in (9, 1) and (10, 3) to be on the 5th stream), the original paper gets decently high correct probabilities. 
+
+A very similar circuit setup produces very good results for prompts of the form "If [some number] then ____", where the task is predicting the next number.
 
 
 
