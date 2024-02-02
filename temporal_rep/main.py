@@ -555,3 +555,60 @@ plot_pixels(prompt_tokens, logits_pre_MLP_9, prompt_titles, desc="Layer 9 pre-ML
 plot_pixels(prompt_tokens, logits_post_MLP_9, prompt_titles, desc="Layer 9 post-MLP logits (normalized)")
 
 # %%
+# Construct circuit
+
+output_dict = {} # stores all previous outputs
+
+def zero_ablate_layer_hook(
+    activation: Float[Tensor, "?"],
+    hook: HookPoint,
+    preserve_stream = tuple() # head_to_ablate, stream to set to 1 wrt to final stream
+) -> Float[Tensor, "?"]:
+    print(f"zero_ablate {preserve_stream}")
+    print(f"{len(output_dict)=}")
+    new_activation = t.zeros_like(activation)
+    if preserve_stream: #this is an attention head for which we want to ablate a particular stream
+        new_activation[:, preserve_stream[0], :, :] = activation[:, preserve_stream[0], :, :] #copy this head only 
+        new_activation[:, preserve_stream[0], -1, :preserve_stream[1]] = 0
+        new_activation[:, preserve_stream[0], -1, preserve_stream[1]] = 1
+        new_activation[:, preserve_stream[0], -1, preserve_stream[1]+1:] = 0
+        return new_activation
+    return t.zeros_like(activation)
+
+def save_output_hook(
+    activation: Float[Tensor, "?"],
+    hook: HookPoint, 
+    name: str
+) -> Float[Tensor, "?"]:
+    print(f"save_{name}")
+    print(f"{len(output_dict)=}")
+    output_dict[name] = activation
+    return activation
+
+def replace_output_hook(
+    activation: Float[Tensor, "?"],
+    hook: HookPoint, 
+    names: List[str],
+    replacement=None  
+) -> Float[Tensor, "?"]:
+    replacements = [output_dict[key] for key in names]
+    output = replacements[0]
+    for x in replacements[1:]:
+        output += x
+    return output
+
+fwd_hooks = [(utils.get_act_name("pattern", 0), zero_ablate_layer_hook), #zero ablate attn pattern in layer 0
+             ('blocks.0.hook_mlp_out', functools.partial(save_output_hook, name="mlp_0_out")), #store output from mlp_0
+             ('blocks.9.hook_resid_pre', functools.partial(replace_output_hook, names=["mlp_0_out"])), #replace resid_stream right before layer 9 with output from mlp_0
+             (utils.get_act_name('pattern', 9), functools.partial(zero_ablate_layer_hook, preserve_stream=(1, 4))), #zero ablate heads in layer 9, set head 1 stream 4 to 1
+             ('blocks.9.hook_attn_out', functools.partial(save_output_hook, name="layer_9_out")), #save output from layer 9 attention heads before residual stream
+             ('blocks.10.hook_resid_pre', functools.partial(replace_output_hook, names=["mlp_0_out"])), #replace resid_stream right before layer 10 with output from mlp_0
+             (utils.get_act_name('pattern', 10), functools.partial(zero_ablate_layer_hook, preserve_stream=(3, 4))), #zero ablate heads in layer 10, set head 3 stream 4 to 1
+             ('blocks.10.hook_attn_out', functools.partial(save_output_hook, name="layer_10_out")), #save output from layer 9 attention heads before residual stream
+             ('blocks.11.hook_attn_out', functools.partial(replace_output_hook, names=["layer_9_out", "layer_10_out"])), #save output from layer 9 attention heads before residual stream
+            ]
+
+logits = model.run_with_hooks(prompts, fwd_hooks=fwd_hooks)
+probs = logits.softmax(dim=-1)
+print(probs[t.arange(len(prompt_tokens)), -1, answer_tokens])
+# %%
