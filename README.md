@@ -41,7 +41,7 @@ Note: the color gradient is based on the correct probabilites at each head
 We can further examine the attention patterns of heads (9, 1) and (10, 3):
 ![Attention pattern for head (9, 1)](./temporal_rep/imgs/Layer9Pattern.png "Attention pattern for head (9, 1)")
 
-Most tokens seem to attend to the BOS token. The "is" token very slightly attends to the *subject day* token.
+Most tokens seem to attend to the BOS token. The "is" token only very slightly attends to the *subject day* token. The "tomorrow" token pays slightly more attention to the *subject day*.
 
 ![Attention pattern for head (10, 3)](./temporal_rep/imgs/Layer10Pattern.png "Attention pattern for head (10, 3)")
 
@@ -78,11 +78,11 @@ The main diagonal demonstrates particularly high logit values, particularly for 
 ## Examining the role of MLPs
 Apply logit lens in the residual stream before and after the MLP in each layer (i.e. at resid_mid and at resid_post).
 
-Graphing the correct probabilities at resid_pre (before MLP) and resid_post (after MLP) in each layer:
+Graphing the correct probabilities at resid_mid (before MLP) and resid_post (after MLP) in each layer:
 
 ![Correct probabilities pre and post MLP](./temporal_rep/imgs/MLP-probs.png "Correct probabilities pre and post MLP")
 
-Graphing the difference in correct probabilities between resid_pre and resid_post in each layer:
+Graphing the difference in correct probabilities between resid_mid and resid_post in each layer:
 
 ![Difference in correct probabilities between resid_pre and resid_post](./temporal_rep/imgs/MLP-prob-diffs.png "Difference in correct probabilities between resid_pre and resid_post")
 
@@ -90,7 +90,7 @@ Graphing the difference in correct probabilities between resid_pre and resid_pos
 For the correct probabilities pre- and post- MLP:
 - Sharp increase in correct probabilities at MLP_7_pre and MLP_10_pre (function of operations in attention layer 7 and attention layer 10)
 - Sharp increase in correct probabilities at MLP_9_post (function of operations in MLP of layer 9)
-- Sharp decrease in correct probabilities at MLP_11_pre
+- Sharp decrease in correct probabilities at MLP_11_mid
 
 For the *differences* in probabilities between pre- and post- MLP locations in the residual stream:
 - MLP_7, MLP_10, and MLP_11 seem to be destructive (caused a decrease in correct probs)
