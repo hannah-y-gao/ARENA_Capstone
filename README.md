@@ -62,7 +62,7 @@ The tokens "is" and "," attend strongly to the *subject day* token (i.e. "Monday
 ## Logit for all day-tokens across all prompts
 
 ### Examining head (9, 1)
-The paper hypothesizes that head (9, 1) is the actual "next-day-prediction" head. Below is a plot showing the logits for all days for each prompt for the head (9, 1).
+The paper hypothesizes that head (9, 1) is the actual "next-day-prediction" head. Below is a plot showing the logits for all days for each prompt for the head (9, 1) (i.e. if we directly unembed the results from this head without returning to the residual stream).
 
 ![Logits of all day-tokens across all prompts for head (9, 1)](./temporal_rep/imgs/Logits-9-1.png "Logits of all days for (9, 1)")
 
@@ -95,14 +95,14 @@ For the correct probabilities pre- and post- MLP:
 For the *differences* in probabilities between pre- and post- MLP locations in the residual stream:
 - MLP_7, MLP_10, and MLP_11 seem to be destructive (caused a decrease in correct probs)
 - MLP_8 and MLP_9 are constructive (caused an increase in correct probs)
-- Overall, MLP_10 appears to be the most destructive while MLP_9 seems the most constructive
+- **Overall, MLP_10 appears to be the most destructive while MLP_9 seems the most constructive**
 
 ## Pre- and post- layer 9 MLP
 
-Normalized logit predictions for each day across all prompts pre-MLP-9:
+Normalized logit predictions for each day across all prompts pre-MLP-9 (at resid_mid):
 ![Normalized logits pre MLP 9](./temporal_rep/imgs/L9_pre.png "Normalized logits pre MLP 9")
 
-Normalized logit predictions for each day across all prompts post-MLP-9:
+Normalized logit predictions for each day across all prompts post-MLP-9 (at resid_post):
 ![Normalized logits post MLP 9](./temporal_rep/imgs/L9_post.png "Normalized logits post MLP 9")
 
 MLP_9 shifts logits from the main diagonal to right below the diagonal.
