@@ -597,18 +597,19 @@ def replace_output_hook(
     return output
 
 fwd_hooks_no_MLP_9 = [
-             ("blocks.0.hook_resid_pre", functools.partial(save_output_hook, name="embedding_out")),
+             ("blocks.0.hook_resid_pre", functools.partial(save_output_hook, name="embedding_out")), #save output from layer 0 resid_pre
              (utils.get_act_name("pattern", 0), zero_ablate_layer_hook), #zero ablate attn pattern in layer 0
              ('blocks.0.hook_mlp_out', functools.partial(save_output_hook, name="mlp_0_out")), #store output from mlp_0
-             ('blocks.9.hook_resid_pre', functools.partial(replace_output_hook, names=["embedding_out", "mlp_0_out"])), #replace resid_stream right before layer 9 with output from mlp_0
+             ('blocks.9.hook_resid_pre', functools.partial(replace_output_hook, names=["embedding_out", "mlp_0_out"])), #replace resid_stream right before layer 9 with output from mlp_0 plus output after embedding
              (utils.get_act_name('pattern', 9), functools.partial(zero_ablate_layer_hook, preserve_stream=(1, 4))), #zero ablate heads in layer 9, set head 1 stream 4 to 1
              ('blocks.9.hook_attn_out', functools.partial(save_output_hook, name="layer_9_out")), #save output from layer 9 attention heads before residual stream
              ('blocks.10.hook_resid_pre', functools.partial(replace_output_hook, names=["mlp_0_out"])), #replace resid_stream right before layer 10 with output from mlp_0
              (utils.get_act_name('pattern', 10), functools.partial(zero_ablate_layer_hook, preserve_stream=(3, 4))), #zero ablate heads in layer 10, set head 3 stream 4 to 1
-             ('blocks.10.hook_attn_out', functools.partial(save_output_hook, name="layer_10_out")), #save output from layer 9 attention heads before residual stream
-             ('blocks.11.hook_attn_out', functools.partial(replace_output_hook, names=["layer_9_out", "layer_10_out"])), #save output from layer 9 attention heads before residual stream
+             ('blocks.10.hook_attn_out', functools.partial(save_output_hook, name="layer_10_out")), #save output from layer 10 attention heads before residual stream
+             ('blocks.11.hook_attn_out', functools.partial(replace_output_hook, names=["layer_9_out", "layer_10_out"])), #save output from layer 9 and layer 10 attention heads before residual stream
             ]
 
+# Cricuit without MLP 9 (only MLP 0)
 logits = model.run_with_hooks(prompts, fwd_hooks=fwd_hooks_no_MLP_9)
 probs_no_MLP_9 = logits.softmax(dim=-1)
 print("Probabilities of correct tokens: ", probs_no_MLP_9[t.arange(len(prompt_tokens)), -1, answer_tokens])
@@ -619,6 +620,7 @@ fwd_hooks_MLP_9 = [("blocks.9.hook_resid_mid", functools.partial(replace_output_
                ('blocks.11.hook_attn_out', functools.partial(replace_output_hook, names=["mlp_9_out", "layer_9_out", "layer_10_out"]))
             ]
 
+# Circuit with MLP 9 and MLP 0
 logits = model.run_with_hooks(prompts, fwd_hooks=fwd_hooks_MLP_9)
 probs_MLP_9 = logits.softmax(dim=-1)
 print("Probabilities of correct tokens: ", probs_MLP_9[t.arange(len(prompt_tokens)), -1, answer_tokens])
